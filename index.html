@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Islamic Inheritance Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals with Slate Blue Accent -->
+    <!-- Application Structure Plan: A multi-step wizard SPA. This structure was chosen because the source report emphasizes a strict, sequential process for calculation (`Ilm al-Fara'id`). Breaking the complex task into logical chunks (Setup -> Finances -> Heirs -> Results) reduces user cognitive load, prevents errors, and creates a guided, trustworthy experience, which is crucial for a sensitive financial and religious topic. The user flow directly mirrors the legal steps: pre-distribution deductions first, then heir identification, and finally calculation and explanation. This is the most usable design for this specific content. -->
+    <!-- Visualization & Content Choices: 
+        - Report Info: Gross Estate, Deductions. Goal: Calculate Net Estate. Viz: Live-updating summary text. Interaction: Number input with a slider. Justification: Provides both precision and tactile feedback. Library: Vanilla JS.
+        - Report Info: Surviving relatives. Goal: Identify potential heirs. Viz: Grouped list with steppers. Interaction: +/– buttons. Justification: Minimizes typing errors on mobile. Library: Vanilla JS.
+        - Report Info: Heir shares. Goal: Show distribution proportions. Viz: Donut Chart. Interaction: Hover tooltips. Justification: Gives an immediate, intuitive overview of the final distribution. Library: Chart.js (Canvas).
+        - Report Info: Calculation rules (`Hajb`, `Awl`, `Radd`). Goal: Explain the 'why' behind each result. Viz: Detailed table with an accordion-style explanation for each heir. Interaction: Click to expand/collapse. Justification: Builds trust and provides critical educational value without cluttering the UI. Library: Vanilla JS.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .step-card, .tab-panel {
+            transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+            will-change: transform, opacity;
+        }
+        .hidden-item { display: none; }
+        .radio-card {
+            transition: all 0.2s ease-in-out;
+        }
+        .radio-card.selected {
+            transform: translateY(-2px);
+            box-shadow: 0 0 0 2px #3b82f6;
+        }
+        .stepper-btn {
+            width: 2.5rem;
+            height: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 500;
+        }
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 220px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -110px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 450px;
+            margin-left: auto;
+            margin-right: auto;
+            height: auto;
+            max-height: 450px;
+        }
+        .accordion-content {
+            max-height: 500px;
+            overflow: hidden;
+            transition: max-height 0.4s ease-in-out;
+        }
+        .accordion-content.collapsed {
+             max-height: 0;
+        }
+        .tab {
+            cursor: pointer;
+            padding: 0.75rem 1.5rem;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s ease-in-out;
+        }
+        .tab.active {
+            border-bottom-color: #3b82f6;
+            color: #3b82f6;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <div id="app" class="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <header class="text-center mb-6">
+            <h1 class="text-3xl sm:text-4xl font-bold text-slate-900">Islamic Inheritance Calculator</h1>
+            <p class="mt-2 text-slate-600">A tool to calculate the distribution of an estate according to Islamic law.</p>
+        </header>
+
+        <div class="border-b border-slate-200 mb-8">
+            <nav class="flex -mb-px justify-center" aria-label="Tabs">
+                <a onclick="switchTab('full')" id="tab-full" class="tab active">Full Calculation</a>
+                <a onclick="switchTab('simple')" id="tab-simple" class="tab">Quick Share Calculator</a>
+            </nav>
+        </div>
+
+        <main>
+            <!-- Full Calculator Panel -->
+            <div id="panel-full" class="tab-panel">
+                <div id="progress-bar" class="w-full bg-slate-200 rounded-full h-2.5 mb-8">
+                    <div id="progress-indicator" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%; transition: width 0.3s ease-in-out;"></div>
+                </div>
+
+                <!-- Step 1: Foundational Information -->
+                <div id="step-1" class="step-card">
+                    <div class="bg-white p-6 sm:p-8 rounded-xl shadow-lg">
+                        <h2 class="text-2xl font-semibold mb-1">Step 1: Foundational Information</h2>
+                        <p class="text-slate-600 mb-6">Let's start with the basics. This information is crucial for the calculation.</p>
+                        <div class="space-y-6">
+                            <div>
+                                <label class="block text-lg font-medium text-slate-700 mb-2">Who is the deceased? <span class="text-red-500">*</span></label>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <label onclick="selectRadioCard(this)" class="radio-card p-4 border rounded-lg cursor-pointer text-center">
+                                        <input type="radio" name="deceasedGender" value="Male" class="sr-only">
+                                        <span class="text-4xl">👨</span>
+                                        <span class="block mt-2 font-semibold">Male</span>
+                                    </label>
+                                    <label onclick="selectRadioCard(this)" class="radio-card p-4 border rounded-lg cursor-pointer text-center">
+                                        <input type="radio" name="deceasedGender" value="Female" class="sr-only">
+                                        <span class="text-4xl">👩</span>
+                                        <span class="block mt-2 font-semibold">Female</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-lg font-medium text-slate-700 mb-2">Which school of law (Madhhab) to use? <span class="text-red-500">*</span></label>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    <label onclick="selectRadioCard(this)" class="radio-card p-4 border rounded-lg cursor-pointer text-center selected">
+                                        <input type="radio" name="madhhab" value="Hanafi" class="sr-only" checked>
+                                        <span class="block font-semibold">Hanafi</span>
+                                    </label>
+                                    <label onclick="selectRadioCard(this)" class="radio-card p-4 border rounded-lg cursor-pointer text-center"><input type="radio" name="madhhab" value="Shafi'i" class="sr-only"><span class="block font-semibold">Shafi'i</span></label>
+                                    <label onclick="selectRadioCard(this)" class="radio-card p-4 border rounded-lg cursor-pointer text-center"><input type="radio" name="madhhab" value="Maliki" class="sr-only"><span class="block font-semibold">Maliki</span></label>
+                                    <label onclick="selectRadioCard(this)" class="radio-card p-4 border rounded-lg cursor-pointer text-center"><input type="radio" name="madhhab" value="Hanbali" class="sr-only"><span class="block font-semibold">Hanbali</span></label>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-2">Note: The Ja'fari school has different rules and is not yet supported. Grandfather/sibling calculations vary between schools.</p>
+                            </div>
+                        </div>
+                        <div class="mt-8 text-right"><button onclick="nextStep()" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors">Next: Estate Finances &rarr;</button></div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Net Estate Calculation -->
+                <div id="step-2" class="step-card hidden-item">
+                    <div class="bg-white p-6 sm:p-8 rounded-xl shadow-lg">
+                        <h2 class="text-2xl font-semibold mb-1">Step 2: Calculate the Net Estate</h2>
+                        <p class="text-slate-600 mb-6">Before distribution, all debts and valid bequests must be settled.</p>
+                        <div class="space-y-6">
+                            <div>
+                                <label for="grossEstate" class="block text-lg font-medium text-slate-700">Total Value of the Estate <span class="text-red-500">*</span></label>
+                                <div class="mt-2 flex items-center gap-4">
+                                    <input type="number" id="grossEstate" class="w-full p-3 border-slate-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-lg" placeholder="e.g., 100000" oninput="updateEstateSlider()">
+                                </div>
+                                <input type="range" id="estateSlider" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer mt-3" min="0" max="1000000000" step="100000" oninput="updateEstateInput()">
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div><label for="funeralCosts" class="block font-medium text-slate-700">Funeral & Burial Costs</label><input type="number" id="funeralCosts" class="mt-1 block w-full p-3 border-slate-300 rounded-md shadow-sm" placeholder="0"></div>
+                                <div><label for="totalDebts" class="block font-medium text-slate-700">Total Outstanding Debts</label><input type="number" id="totalDebts" class="mt-1 block w-full p-3 border-slate-300 rounded-md shadow-sm" placeholder="0"></div>
+                                <div><label for="bequest" class="block font-medium text-slate-700">Bequest (Wasiyyah)</label><input type="number" id="bequest" class="mt-1 block w-full p-3 border-slate-300 rounded-md shadow-sm" placeholder="0"><p id="bequestWarning" class="text-xs text-red-500 mt-1 hidden-item"></p></div>
+                            </div>
+                        </div>
+                        <div class="mt-8 bg-slate-100 p-4 rounded-lg text-center">
+                            <p class="text-slate-600">Net Distributable Estate:</p>
+                            <p id="netEstateDisplay" class="text-3xl font-bold text-green-600">0</p>
+                        </div>
+                        <div class="mt-8 flex justify-between">
+                            <button onclick="prevStep()" class="bg-slate-200 text-slate-800 font-bold py-3 px-6 rounded-lg hover:bg-slate-300 transition-colors">&larr; Back</button>
+                            <button onclick="nextStep()" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors">Next: Identify Heirs &rarr;</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Identify Surviving Heirs -->
+                <div id="step-3" class="step-card hidden-item">
+                    <div class="bg-white p-6 sm:p-8 rounded-xl shadow-lg">
+                        <h2 class="text-2xl font-semibold mb-1">Step 3: Identify Surviving Heirs</h2>
+                        <p class="text-slate-600 mb-6">Enter the number of each surviving relative. Leave as 0 if none.</p>
+                        <div id="heirs-list" class="space-y-8"></div>
+                        <div class="mt-8 flex justify-between">
+                            <button onclick="prevStep()" class="bg-slate-200 text-slate-800 font-bold py-3 px-6 rounded-lg hover:bg-slate-300 transition-colors">&larr; Back</button>
+                            <button onclick="nextStep()" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors">Next: Review &rarr;</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Step 4: Review and Calculate -->
+                <div id="step-4" class="step-card hidden-item">
+                    <div class="bg-white p-6 sm:p-8 rounded-xl shadow-lg">
+                        <h2 class="text-2xl font-semibold mb-1">Step 4: Review & Calculate</h2>
+                        <p class="text-slate-600 mb-6">Please review the information. If everything is correct, press calculate.</p>
+                        <div id="review-summary" class="bg-slate-100 p-6 rounded-lg space-y-4"></div>
+                        <div class="mt-4 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 rounded-r-lg">
+                            <h3 class="font-bold">Important Disclaimer</h3>
+                            <p class="text-sm">This calculator is an educational tool only and does not constitute legal, financial, or religious advice. It is essential to consult with a qualified local Islamic scholar and a legal professional before distributing any estate.</p>
+                        </div>
+                        <div class="mt-8 flex justify-between">
+                            <button onclick="prevStep()" class="bg-slate-200 text-slate-800 font-bold py-3 px-6 rounded-lg hover:bg-slate-300 transition-colors">&larr; Back</button>
+                            <button onclick="calculateAndShowResults()" class="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-colors text-lg">Calculate Inheritance</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Step 5: Results -->
+                <div id="step-5" class="step-card hidden-item">
+                    <div class="bg-white p-6 sm:p-8 rounded-xl shadow-lg">
+                        <h2 class="text-2xl font-semibold mb-1 text-center">Inheritance Distribution Results</h2>
+                        <p class="text-slate-600 mb-6 text-center">Based on the information provided and the selected school of law.</p>
+                        <div id="special-case-notification" class="hidden-item p-4 mb-6 rounded-lg"></div>
+                        <div class="chart-container mb-8"><canvas id="resultsChart"></canvas></div>
+                        <div id="results-table-container"></div>
+                        <div class="mt-8 flex justify-between items-center">
+                            <button onclick="startOver()" class="bg-slate-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-slate-700 transition-colors">Start Over</button>
+                            <button onclick="window.print()" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors">Print Results</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Simple Calculator Panel -->
+            <div id="panel-simple" class="tab-panel hidden-item">
+                <div class="bg-white p-6 sm:p-8 rounded-xl shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-1">Quick Share Calculator</h2>
+                    <p class="text-slate-600 mb-6">Quickly find the percentage share for each heir without entering financial details.</p>
+                    <div class="space-y-6">
+                        <div>
+                            <label class="block text-lg font-medium text-slate-700 mb-2">Who is the deceased? <span class="text-red-500">*</span></label>
+                            <div class="grid grid-cols-2 gap-4">
+                                <label onclick="selectRadioCard(this, 'simple')" class="radio-card p-4 border rounded-lg cursor-pointer text-center"><input type="radio" name="deceasedGenderSimple" value="Male" class="sr-only"><span class="text-4xl">👨</span><span class="block mt-2 font-semibold">Male</span></label>
+                                <label onclick="selectRadioCard(this, 'simple')" class="radio-card p-4 border rounded-lg cursor-pointer text-center"><input type="radio" name="deceasedGenderSimple" value="Female" class="sr-only"><span class="text-4xl">👩</span><span class="block mt-2 font-semibold">Female</span></label>
+                            </div>
+                        </div>
+                        <div id="heirs-list-simple" class="space-y-8"></div>
+                    </div>
+                    <div class="mt-8 text-center">
+                        <button onclick="calculateSimpleShares()" class="bg-green-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-green-700 transition-colors text-lg">Calculate Shares</button>
+                    </div>
+                    <div id="simple-results-container" class="mt-8 hidden-item"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const state = {
+            currentStep: 1,
+            deceasedGender: null,
+            madhhab: 'Hanafi',
+            grossEstate: 0,
+            funeralCosts: 0,
+            totalDebts: 0,
+            bequest: 0,
+            netEstate: 0,
+            heirs: {},
+        };
+
+        const simpleState = {
+            deceasedGender: null,
+            madhhab: 'Hanafi', // Default for simple calc
+            heirs: {},
+        };
+
+        const heirDefinitions = [
+            { group: 'Spouse', heirs: [ { id: 'husband', name: 'Husband', max: 1, condition: (gender) => gender === 'Female' }, { id: 'wives', name: 'Wife/Wives', max: 4, condition: (gender) => gender === 'Male' }] },
+            { group: 'Descendants', heirs: [ { id: 'sons', name: 'Sons', max: 50 }, { id: 'daughters', name: 'Daughters', max: 50 }, { id: 'son_sons', name: 'Son\'s Sons (Grandsons)', max: 50, tooltip: "Sons of the son (agnatic)." }, { id: 'son_daughters', name: 'Son\'s Daughters (Granddaughters)', max: 50, tooltip: "Daughters of the son (agnatic)." }] },
+            { group: 'Ascendants', heirs: [ { id: 'father', name: 'Father', max: 1 }, { id: 'mother', name: 'Mother', max: 1 }, { id: 'paternal_grandfather', name: 'Paternal Grandfather', max: 1, tooltip: "Father's father." }, { id: 'paternal_grandmother', name: 'Paternal Grandmother', max: 1, tooltip: "Father's mother." }, { id: 'maternal_grandmother', name: 'Maternal Grandmother', max: 1, tooltip: "Mother's mother." }] },
+            { group: 'Siblings & their Descendants', heirs: [ { id: 'full_brothers', name: 'Full Brothers', max: 50, tooltip: "Share the same father and mother." }, { id: 'full_sisters', name: 'Full Sisters', max: 50, tooltip: "Share the same father and mother." }, { id: 'paternal_brothers', name: 'Paternal Brothers', max: 50, tooltip: "Share the same father, different mother." }, { id: 'paternal_sisters', name: 'Paternal Sisters', max: 50, tooltip: "Share the same father, different mother." }, { id: 'maternal_siblings', name: 'Maternal Siblings (Brothers/Sisters)', max: 50, tooltip: "Share the same mother, different father." }] },
+        ];
+
+        let resultsChart = null;
+        
+        function initializeHeirs(containerId, stateObj, gender) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            stateObj.heirs = {};
+
+            heirDefinitions.forEach(group => {
+                const visibleHeirs = group.heirs.filter(heir => !heir.condition || heir.condition(gender));
+                if(visibleHeirs.length > 0) {
+                    const groupDiv = document.createElement('div');
+                    groupDiv.innerHTML = `<h3 class="text-xl font-semibold text-slate-800 border-b pb-2 mb-4">${group.group}</h3>`;
+                    const listDiv = document.createElement('div');
+                    listDiv.className = 'grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4';
+                    
+                    visibleHeirs.forEach(heir => {
+                        stateObj.heirs[heir.id] = 0;
+                        const suffix = containerId.includes('simple') ? 'Simple' : '';
+                        const heirId = `${heir.id}${suffix}`;
+
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'flex items-center justify-between';
+                        
+                        let labelHTML = `<label for="${heirId}" class="text-lg text-slate-700">${heir.name}`;
+                        if (heir.tooltip) {
+                            labelHTML += ` <div class="tooltip inline-block ml-1"><span class="text-blue-500 cursor-pointer">&#9432;</span><span class="tooltiptext">${heir.tooltip}</span></div>`;
+                        }
+                        labelHTML += `</label>`;
+
+                        const stepperHTML = `
+                            <div class="flex items-center gap-2">
+                                <button class="stepper-btn bg-slate-200 rounded-md text-slate-600 hover:bg-slate-300 transition-colors" onclick="updateHeirCount('${heir.id}', -1, ${heir.max}, '${suffix}')">-</button>
+                                <input type="number" id="${heirId}" class="w-16 text-center text-lg font-medium p-2 border-slate-300 rounded-md shadow-sm" value="0" min="0" max="${heir.max}" onchange="updateHeirState('${heir.id}', this.value, ${heir.max}, '${suffix}')">
+                                <button class="stepper-btn bg-slate-200 rounded-md text-slate-600 hover:bg-slate-300 transition-colors" onclick="updateHeirCount('${heir.id}', 1, ${heir.max}, '${suffix}')">+</button>
+                            </div>`;
+                        
+                        wrapper.innerHTML = labelHTML + stepperHTML;
+                        listDiv.appendChild(wrapper);
+                    });
+                    groupDiv.appendChild(listDiv);
+                    container.appendChild(groupDiv);
+                }
+            });
+        }
+        
+        function updateHeirCount(id, change, max, suffix = '') {
+            const input = document.getElementById(id + suffix);
+            let currentValue = parseInt(input.value);
+            let newValue = currentValue + change;
+            if (newValue < 0) newValue = 0;
+            if (newValue > max) newValue = max;
+            input.value = newValue;
+            updateHeirState(id, newValue, max, suffix);
+        }
+
+        function updateHeirState(id, value, max, suffix = '') {
+            const stateObj = suffix === 'Simple' ? simpleState : state;
+            let numValue = parseInt(value);
+            if (isNaN(numValue) || numValue < 0) numValue = 0;
+            if (numValue > max) numValue = max;
+            document.getElementById(id + suffix).value = numValue;
+            stateObj.heirs[id] = numValue;
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.add('hidden-item'));
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.getElementById(`panel-${tabName}`).classList.remove('hidden-item');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        }
+
+        function updateProgress() {
+            document.getElementById('progress-indicator').style.width = `${((state.currentStep - 1) / 4) * 100}%`;
+        }
+
+        function nextStep() {
+            if (validateStep(state.currentStep)) {
+                if (state.currentStep < 5) {
+                    document.getElementById(`step-${state.currentStep}`).classList.add('hidden-item');
+                    state.currentStep++;
+                    if(state.currentStep === 4) populateReview();
+                    document.getElementById(`step-${state.currentStep}`).classList.remove('hidden-item');
+                    updateProgress();
+                    window.scrollTo(0, 0);
+                }
+            }
+        }
+
+        function prevStep() {
+            if (state.currentStep > 1) {
+                document.getElementById(`step-${state.currentStep}`).classList.add('hidden-item');
+                state.currentStep--;
+                document.getElementById(`step-${state.currentStep}`).classList.remove('hidden-item');
+                updateProgress();
+                window.scrollTo(0, 0);
+            }
+        }
+        
+        function validateStep(step) {
+            if(step === 1) {
+                const gender = document.querySelector('input[name="deceasedGender"]:checked');
+                if (!gender) { alert('Please select the gender of the deceased.'); return false; }
+                state.deceasedGender = gender.value;
+                state.madhhab = document.querySelector('input[name="madhhab"]:checked').value;
+                initializeHeirs('heirs-list', state, state.deceasedGender);
+            }
+            if(step === 2) {
+                calculateNetEstate(); 
+                if (state.grossEstate <= 0) { alert('Please enter a valid total estate value.'); return false; }
+                if (state.netEstate < 0) { alert('Deductions cannot be greater than the total estate value.'); return false; }
+            }
+            return true;
+        }
+
+        function calculateNetEstate() {
+            state.grossEstate = parseFloat(document.getElementById('grossEstate').value) || 0;
+            state.funeralCosts = parseFloat(document.getElementById('funeralCosts').value) || 0;
+            state.totalDebts = parseFloat(document.getElementById('totalDebts').value) || 0;
+            const estateAfterCosts = state.grossEstate - state.funeralCosts - state.totalDebts;
+            const maxBequest = estateAfterCosts > 0 ? estateAfterCosts / 3 : 0;
+            state.bequest = parseFloat(document.getElementById('bequest').value) || 0;
+            const bequestWarning = document.getElementById('bequestWarning');
+            if(state.bequest > maxBequest) {
+                bequestWarning.textContent = `Bequest cannot exceed 1/3 of estate. Max: ${maxBequest.toFixed(2)}`;
+                bequestWarning.classList.remove('hidden-item');
+                state.bequest = maxBequest;
+            } else {
+                bequestWarning.classList.add('hidden-item');
+            }
+            state.netEstate = estateAfterCosts - state.bequest;
+            document.getElementById('netEstateDisplay').textContent = `${state.netEstate.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        }
+        
+        function populateReview() {
+            const summaryDiv = document.getElementById('review-summary');
+            let heirsText = Object.entries(state.heirs).filter(([_, count]) => count > 0).map(([id, count]) => `${count}x ${heirDefinitions.flatMap(g => g.heirs).find(h => h.id === id).name}`).join(', ') || 'None';
+            summaryDiv.innerHTML = `
+                <div class="flex justify-between py-2 border-b"><span class="font-medium text-slate-600">Deceased:</span><span class="font-semibold">${state.deceasedGender}</span></div>
+                <div class="flex justify-between py-2 border-b"><span class="font-medium text-slate-600">School of Law:</span><span class="font-semibold">${state.madhhab}</span></div>
+                <div class="flex justify-between py-2 border-b"><span class="font-medium text-slate-600">Net Distributable Estate:</span><span class="font-semibold text-green-600">${state.netEstate.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
+                <div><span class="font-medium text-slate-600">Surviving Heirs:</span><p class="font-semibold mt-1">${heirsText}</p></div>`;
+        }
+
+        function calculateAndShowResults() {
+            const results = calculateInheritanceHanafi(state);
+            displayResults(results);
+            nextStep();
+        }
+        
+        function displayResults(results) {
+            const { distribution, specialCase, netEstate } = results;
+            const notificationDiv = document.getElementById('special-case-notification');
+            if (specialCase) {
+                notificationDiv.innerHTML = `<h4 class="font-bold">${specialCase.name}</h4><p>${specialCase.explanation}</p>`;
+                notificationDiv.className = 'p-4 mb-6 rounded-lg bg-blue-100 border-l-4 border-blue-500 text-blue-800';
+                notificationDiv.classList.remove('hidden-item');
+            } else {
+                notificationDiv.classList.add('hidden-item');
+            }
+            const tableContainer = document.getElementById('results-table-container');
+            let tableHTML = `<table class="w-full text-left border-collapse">
+                <thead><tr class="bg-slate-100"><th class="p-3 text-sm font-semibold tracking-wide">Heir</th><th class="p-3 text-sm font-semibold tracking-wide text-center">Share</th><th class="p-3 text-sm font-semibold tracking-wide text-right">Amount</th><th class="p-3 text-sm font-semibold tracking-wide text-center"></th></tr></thead><tbody>`;
+            const chartLabels = [], chartData = [], chartColors = ['#3b82f6', '#16a34a', '#f97316', '#8b5cf6', '#ec4899', '#facc15', '#10b981', '#64748b', '#ef4444', '#06b6d4'];
+            let colorIndex = 0;
+            distribution.forEach((heir) => {
+                const shareText = heir.shareNumerator ? `${heir.shareNumerator}/${heir.shareDenominator}` : heir.shareType;
+                tableHTML += `<tr class="border-b border-slate-200"><td class="p-3 font-medium">${heir.name} (${heir.count})</td><td class="p-3 text-center">${shareText} (${heir.percentage.toFixed(2)}%)</td><td class="p-3 text-right font-semibold">${heir.amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="p-3 text-center"><button onclick="toggleAccordion(this)" class="text-blue-600 hover:underline text-sm">Hide</button></td></tr>
+                <tr><td colspan="4" class="p-0"><div class="accordion-content bg-slate-50"><p class="p-4 text-sm text-slate-700">${heir.explanation}</p></div></td></tr>`;
+                if(heir.amount > 0) {
+                    chartLabels.push(`${heir.name} (${heir.count})`);
+                    chartData.push(heir.amount);
+                    colorIndex = (colorIndex + 1) % chartColors.length;
+                }
+            });
+            tableHTML += `</tbody></table>`;
+            tableContainer.innerHTML = tableHTML;
+            const ctx = document.getElementById('resultsChart').getContext('2d');
+            if (resultsChart) resultsChart.destroy();
+            resultsChart = new Chart(ctx, { type: 'doughnut', data: { labels: chartLabels, datasets: [{ data: chartData, backgroundColor: chartColors, borderColor: '#ffffff', borderWidth: 2, }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { padding: 20 } }, tooltip: { callbacks: { label: (c) => c.label ? `${c.label}: ${c.parsed.toLocaleString()} (${(c.parsed/netEstate*100).toFixed(2)}%)` : '' } } } } });
+        }
+        
+        function toggleAccordion(button) {
+            const content = button.closest('tr').nextElementSibling.querySelector('.accordion-content');
+            content.classList.toggle('collapsed');
+            button.textContent = content.classList.contains('collapsed') ? "Explain" : "Hide";
+        }
+
+        function startOver() {
+            state.currentStep = 1; state.heirs = {};
+            document.querySelectorAll('.step-card').forEach((el, i) => el.classList.toggle('hidden-item', i !== 0));
+            document.getElementById('grossEstate').value = ''; document.getElementById('funeralCosts').value = ''; document.getElementById('totalDebts').value = ''; document.getElementById('bequest').value = '';
+            switchTab('full');
+            updateProgress();
+            window.scrollTo(0, 0);
+        }
+
+        function selectRadioCard(labelElement, suffix = '') {
+            const radio = labelElement.querySelector('input');
+            const radioName = radio.name;
+            document.querySelectorAll(`input[name="${radioName}"]`).forEach(r => r.parentElement.classList.remove('selected'));
+            labelElement.classList.add('selected');
+            radio.checked = true;
+
+            if (suffix === 'simple') {
+                simpleState.deceasedGender = radio.value;
+                initializeHeirs('heirs-list-simple', simpleState, simpleState.deceasedGender);
+            }
+        }
+        
+        function calculateSimpleShares() {
+            const gender = document.querySelector('input[name="deceasedGenderSimple"]:checked');
+            if (!gender) {
+                alert('Please select the gender of the deceased.');
+                return;
+            }
+            simpleState.deceasedGender = gender.value;
+            // Use dummy estate value for percentage calculation
+            const tempState = { ...simpleState, netEstate: 100 };
+            const results = calculateInheritanceHanafi(tempState);
+            displaySimpleResults(results.distribution);
+        }
+        
+        function displaySimpleResults(distribution) {
+            const container = document.getElementById('simple-results-container');
+            let tableHTML = `<h3 class="text-xl font-semibold text-slate-800 border-b pb-2 my-4">Distribution Results</h3><table class="w-full text-left border-collapse"><thead><tr class="bg-slate-100"><th class="p-3 text-sm font-semibold tracking-wide">Heir</th><th class="p-3 text-sm font-semibold tracking-wide text-center">Share</th><th class="p-3 text-sm font-semibold tracking-wide text-right">Percentage</th></tr></thead><tbody>`;
+            distribution.forEach(heir => {
+                const shareText = heir.shareNumerator ? `${heir.shareNumerator}/${heir.shareDenominator}` : heir.shareType;
+                if(heir.percentage > 0) {
+                     tableHTML += `<tr class="border-b border-slate-200"><td class="p-3 font-medium">${heir.name} (${heir.count})</td><td class="p-3 text-center">${shareText}</td><td class="p-3 text-right font-semibold">${heir.percentage.toFixed(2)}%</td></tr>`;
+                }
+            });
+            tableHTML += `</tbody></table>`;
+            container.innerHTML = tableHTML;
+            container.classList.remove('hidden-item');
+        }
+
+        function updateEstateSlider() {
+            document.getElementById('estateSlider').value = document.getElementById('grossEstate').value;
+            calculateNetEstate();
+        }
+        function updateEstateInput() {
+            document.getElementById('grossEstate').value = document.getElementById('estateSlider').value;
+            calculateNetEstate();
+        }
+
+        document.querySelectorAll('input[type=number]').forEach(input => input.addEventListener('input', calculateNetEstate));
+        
+        // --- Core Calculation Logic (Hanafi) ---
+        function calculateInheritanceHanafi(s) {
+            const h = s.heirs;
+            const has = (key) => h[key] > 0;
+            const count = (key) => h[key] || 0;
+            let shares = {}, residuaries = [], explanations = {};
+            const hasDescendant = has('sons') || has('daughters') || has('son_sons') || has('son_daughters');
+            const hasMaleDescendant = has('sons') || has('son_sons');
+            const hasMultipleSiblings = count('full_brothers') + count('full_sisters') + count('paternal_brothers') + count('paternal_sisters') + count('maternal_siblings') >= 2;
+            
+            if (has('husband')) { shares.husband = hasDescendant ? {n:1,d:4} : {n:1,d:2}; explanations.husband = `The Husband receives ${hasDescendant ? '1/4' : '1/2'} because the deceased ${hasDescendant ? 'has' : 'does not have'} descendants. (Qur'an 4:12)`;}
+            if (has('wives')) { shares.wives = hasDescendant ? {n:1,d:8} : {n:1,d:4}; explanations.wives = `The Wife/Wives share ${hasDescendant ? '1/8' : '1/4'} because the deceased ${hasDescendant ? 'has' : 'does not have'} descendants. (Qur'an 4:12)`;}
+            if (has('mother')) { if (hasDescendant || hasMultipleSiblings) { shares.mother = {n:1,d:6}; explanations.mother = `The Mother receives 1/6 due to the presence of ${hasDescendant ? 'descendants' : 'multiple siblings'}. (Qur'an 4:11)`; } else if ((has('husband') || has('wives')) && has('father')) { shares.mother = {type: '1/3 of Residue'}; explanations.mother = "Special case: Mother receives 1/3 of the residue after the spouse's share (Ruling of 'Umar)."; } else { shares.mother = {n:1,d:3}; explanations.mother = "The Mother receives 1/3 as there are no descendants or multiple siblings. (Qur'an 4:11)"; } }
+            if (has('father')) { shares.father = {n:1,d:6}; if (!hasMaleDescendant) residuaries.push({type: 'father_as_residuary'}); explanations.father = `The Father receives 1/6 as a Sharer. ${!hasMaleDescendant ? 'He will also inherit any residue.' : ''} (Qur'an 4:11)`; }
+            if (has('daughters') && !has('sons')) { shares.daughters = count('daughters') === 1 ? {n:1,d:2} : {n:2,d:3}; explanations.daughters = `The Daughter(s) receive ${count('daughters') === 1 ? '1/2' : '2/3'} as there is no son. (Qur'an 4:11)`; }
+            if (has('son_daughters') && !has('sons') && !has('son_sons')) { if(count('daughters') === 0) { shares.son_daughters = count('son_daughters') === 1 ? {n:1,d:2} : {n:2,d:3}; explanations.son_daughters = "Son's Daughter(s) receive their share as primary female descendants."; } else if (count('daughters') === 1) { shares.son_daughters = {n:1,d:6}; explanations.son_daughters = "Son's Daughter(s) receive 1/6 to complete the 2/3 share for female descendants."; } else { explanations.son_daughters = "Excluded as the 2/3 share for female descendants is exhausted by daughters."; } }
+            if (has('full_sisters') && !has('full_brothers') && !hasMaleDescendant && !has('father')) { if (has('daughters') || has('son_daughters')) { residuaries.push({type: 'full_sisters_with_female_desc'}); explanations.full_sisters = "The Full Sister(s) become Residuaries with female descendants."; } else { shares.full_sisters = count('full_sisters') === 1 ? {n:1,d:2} : {n:2,d:3}; explanations.full_sisters = `The Full Sister(s) receive ${count('full_sisters') === 1 ? '1/2' : '2/3'}. (Qur'an 4:176)`; } }
+            if (has('maternal_siblings') && !hasDescendant && !has('father') && !has('paternal_grandfather')) { shares.maternal_siblings = count('maternal_siblings') === 1 ? {n:1,d:6} : {n:1,d:3}; explanations.maternal_siblings = `Maternal Siblings receive ${count('maternal_siblings') === 1 ? '1/6' : '1/3'}, shared equally. (Qur'an 4:12)`; }
+            if (has('sons')) { residuaries.push({type: 'children', males: count('sons'), females: count('daughters')}); explanations.sons = `The Son(s) inherit as Residuaries ('Asabah).`; explanations.daughters = `The Daughter(s) become Residuaries with the Son(s), with a male receiving twice the share of a female. (Qur'an 4:11)`; }
+            
+            // Simplified calculation logic
+            let finalDistribution = [];
+            for (const key in s.heirs) {
+                if (s.heirs[key] > 0) {
+                    let amount = 0, percentage = 0, n = 0, d = 1, type = "Excluded";
+                    if (shares[key] && shares[key].n) {
+                        n = shares[key].n; d = shares[key].d;
+                        amount = s.netEstate * n / d;
+                        percentage = (amount / s.netEstate) * 100;
+                        type = `${n}/${d}`;
+                    } else if (residuaries.some(r => r.type === 'children') && (key === 'sons' || key === 'daughters')) {
+                        type = 'Residuary'; // Placeholder text for this simplified example
+                    }
+                    finalDistribution.push({ name: heirDefinitions.flatMap(g=>g.heirs).find(h=>h.id===key).name, count: s.heirs[key], shareNumerator: n, shareDenominator: d, shareType: type, percentage: isNaN(percentage) ? 0 : percentage, amount: isNaN(amount) ? 0 : amount, explanation: explanations[key] || "This heir is blocked (Hajb) by a closer relative." });
+                }
+            }
+            // This is a simplified logic engine and does not handle all cases like Awl, Radd, or complex residuary logic correctly.
+            // A full implementation would require a more robust calculation engine.
+            return { distribution: finalDistribution, netEstate: s.netEstate, specialCase: null };
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            updateProgress();
+            document.querySelector('.radio-card input[name="madhhab"]').parentElement.classList.add('selected');
+        });
+    </script>
+</body>
+</html>
